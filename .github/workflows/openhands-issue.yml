@@ -1,0 +1,171 @@
+name: OpenHands Issue Workflow
+
+on:
+  workflow_call:
+    inputs:
+      flow_label:
+        description: Issue label selecting a shared flow.
+        required: true
+        type: string
+      phase:
+        description: Stage of the Full-development flow, or execute for direct flows.
+        required: false
+        default: execute
+        type: string
+      llm_env_file:
+        description: Optional path to a runner-local dotenv file with LLM_API_KEY, LLM_BASE_URL, and LLM_MODEL.
+        required: false
+        default: ""
+        type: string
+      check_command:
+        description: Verification command run inside the isolated workspace.
+        required: false
+        default: make check
+        type: string
+      runner_label:
+        description: Additional self-hosted runner label.
+        required: false
+        default: openhands-agent
+        type: string
+      harness_ref:
+        description: Ref of this fork containing the reusable runner.
+        required: false
+        default: main
+        type: string
+    secrets:
+      OPENHANDS_LLM_API_KEY:
+        required: false
+      OPENHANDS_PUBLISH_TOKEN:
+        required: false
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: openhands-issue-${{ github.repository }}-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  run-issue-flow:
+    if: >-
+      github.event.issue.pull_request == null &&
+      github.event.sender.login == github.repository_owner &&
+      ((github.event_name == 'issues' &&
+        github.event.action == 'labeled' &&
+        github.event.label.name == inputs.flow_label &&
+        contains(fromJSON('["agent:openhands-backfix","agent:openhands-quick-fix","agent:openhands-implementation-only","agent:openhands-full-development"]'), inputs.flow_label) &&
+        (inputs.flow_label != 'agent:openhands-full-development' || inputs.phase == 'proposal')) ||
+       (github.event_name == 'issue_comment' &&
+        inputs.flow_label == 'agent:openhands-full-development' &&
+        inputs.phase == 'implementation' &&
+        github.event.comment.user.login == github.repository_owner &&
+        startsWith(github.event.comment.body, '/openhands approve')))
+    runs-on:
+      - self-hosted
+      - macOS
+      - ${{ inputs.runner_label }}
+    timeout-minutes: 90
+    steps:
+      - name: Check out target repository
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository }}
+          token: ${{ github.token }}
+          ref: ${{ github.event.repository.default_branch }}
+          path: TargetProject
+          persist-credentials: false
+
+      - name: Check out the shared workflow runner
+        uses: actions/checkout@v4
+        with:
+          repository: slcosentino1/software-agent-sdk
+          ref: ${{ inputs.harness_ref }}
+          token: ${{ github.token }}
+          path: OpenHandsHarness
+          sparse-checkout: openhands_workflows
+          persist-credentials: false
+
+      - name: Validate runner and credentials
+        shell: bash
+        env:
+          OPENHANDS_FLOW_LABEL: ${{ inputs.flow_label }}
+          OPENHANDS_WORKFLOW_PHASE: ${{ inputs.phase }}
+          OPENHANDS_LLM_API_KEY: ${{ secrets.OPENHANDS_LLM_API_KEY }}
+          OPENHANDS_PUBLISH_TOKEN: ${{ secrets.OPENHANDS_PUBLISH_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
+          OPENHANDS_PHASE: ${{ inputs.phase }}
+          OPENHANDS_ENV_FILE: ${{ inputs.llm_env_file }}
+        run: |
+          set -euo pipefail
+          export PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin:$PATH"
+          command -v python3.13 >/dev/null || { echo "::error::Python 3.13 is required."; exit 1; }
+          command -v docker >/dev/null || { echo "::error::Docker is required."; exit 1; }
+          docker info >/dev/null 2>&1 || { echo "::error::Docker must be running for the runner account."; exit 1; }
+          command -v gh >/dev/null || { echo "::error::GitHub CLI (gh) is required."; exit 1; }
+          if [[ "$OPENHANDS_ENV_FILE" == "~/"* ]]; then OPENHANDS_ENV_FILE="$HOME/${OPENHANDS_ENV_FILE#\~/}"; fi
+          if [[ -z "$OPENHANDS_LLM_API_KEY" ]]; then
+            test -r "$OPENHANDS_ENV_FILE" || { echo "::error::Configure a readable llm_env_file on the runner."; exit 1; }
+            grep -Eq '^(export[[:space:]]+)?LLM_API_KEY=' "$OPENHANDS_ENV_FILE" || { echo "::error::The configured env file has no LLM_API_KEY entry."; exit 1; }
+          fi
+          if [[ "$OPENHANDS_FLOW_LABEL" == "agent:openhands-backfix" || "$OPENHANDS_FLOW_LABEL" == "agent:openhands-full-development" ]]; then
+            command -v aily >/dev/null || { echo "::error::Aily CLI is required for independent review."; exit 1; }
+            aily help claude >/dev/null 2>&1 || { echo "::error::Aily Claude is unavailable to the runner account."; exit 1; }
+          fi
+          if [[ "$OPENHANDS_FLOW_LABEL" != "agent:openhands-implementation-only" && "$OPENHANDS_PHASE" != "proposal" ]]; then
+            test -n "$OPENHANDS_PUBLISH_TOKEN" || test -n "$GITHUB_TOKEN" || { echo "::error::GitHub publication credentials are unavailable."; exit 1; }
+          fi
+
+      - name: Install workflow dependencies
+        shell: bash
+        working-directory: ${{ github.workspace }}/OpenHandsHarness
+        run: |
+          set -euo pipefail
+          export PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin:$PATH"
+          venv="$RUNNER_TEMP/openhands-harness-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          python3.13 -m venv "$venv"
+          "$venv/bin/python" -m pip install -r openhands_workflows/requirements.txt
+          echo "OPENHANDS_HARNESS_PYTHON=$venv/bin/python" >> "$GITHUB_ENV"
+
+      - name: Run shared OpenHands workflow
+        shell: bash
+        working-directory: ${{ github.workspace }}/OpenHandsHarness
+        env:
+          OPENHANDS_FLOW_LABEL: ${{ inputs.flow_label }}
+          OPENHANDS_WORKFLOW_PHASE: ${{ inputs.phase }}
+          OPENHANDS_CHECK_COMMAND: ${{ inputs.check_command }}
+          TARGET_REPO_PATH: ${{ github.workspace }}/TargetProject
+          OPENHANDS_LLM_API_KEY: ${{ secrets.OPENHANDS_LLM_API_KEY }}
+          OPENHANDS_PUBLISH_TOKEN: ${{ secrets.OPENHANDS_PUBLISH_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
+          OPENHANDS_LLM_MODEL: ${{ vars.OPENHANDS_LLM_MODEL }}
+          OPENHANDS_LLM_BASE_URL: ${{ vars.OPENHANDS_LLM_BASE_URL }}
+          OPENHANDS_AGENT_SERVER_IMAGE: ${{ vars.OPENHANDS_AGENT_SERVER_IMAGE || 'ghcr.io/openhands/agent-server:latest-python' }}
+          OPENHANDS_ENV_FILE: ${{ inputs.llm_env_file }}
+        run: |
+          set -euo pipefail
+          export PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/.local/bin:$PATH"
+          if [[ "$OPENHANDS_ENV_FILE" == "~/"* ]]; then OPENHANDS_ENV_FILE="$HOME/${OPENHANDS_ENV_FILE#\~/}"; fi
+          if [[ -n "$OPENHANDS_ENV_FILE" ]]; then
+            test -r "$OPENHANDS_ENV_FILE" || { echo "::error::Configured OpenHands env file is not readable by the runner."; exit 1; }
+            api_key_override="$OPENHANDS_LLM_API_KEY"
+            model_override="$OPENHANDS_LLM_MODEL"
+            base_url_override="$OPENHANDS_LLM_BASE_URL"
+            set -a
+            source "$OPENHANDS_ENV_FILE"
+            set +a
+            export OPENHANDS_LLM_API_KEY="${api_key_override:-${OPENHANDS_LLM_API_KEY:-${LLM_API_KEY:-}}}"
+            export OPENHANDS_LLM_MODEL="${model_override:-${OPENHANDS_LLM_MODEL:-${LLM_MODEL:-}}}"
+            export OPENHANDS_LLM_BASE_URL="${base_url_override:-${OPENHANDS_LLM_BASE_URL:-${LLM_BASE_URL:-}}}"
+          fi
+          "$OPENHANDS_HARNESS_PYTHON" openhands_workflows/runner.py
+
+      - name: Upload implementation-only patch
+        if: success() && inputs.flow_label == 'agent:openhands-implementation-only'
+        uses: actions/upload-artifact@v4
+        with:
+          name: openhands-implementation-${{ github.repository }}-issue-${{ github.event.issue.number }}
+          path: ${{ runner.temp }}/openhands-implementation-issue-${{ github.event.issue.number }}.patch
+          if-no-files-found: error
+          retention-days: 14
