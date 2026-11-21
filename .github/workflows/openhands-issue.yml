@@ -37,6 +37,10 @@ on:
         required: false
       OPENHANDS_PUBLISH_TOKEN:
         required: false
+      AILY_USER_ID:
+        required: false
+      AILY_ENTRA_TOKEN:
+        required: false
 
 permissions:
   contents: write
@@ -94,6 +98,8 @@ jobs:
           OPENHANDS_WORKFLOW_PHASE: ${{ inputs.phase }}
           OPENHANDS_LLM_API_KEY: ${{ secrets.OPENHANDS_LLM_API_KEY }}
           OPENHANDS_PUBLISH_TOKEN: ${{ secrets.OPENHANDS_PUBLISH_TOKEN }}
+          AILY_USER_ID: ${{ secrets.AILY_USER_ID }}
+          AILY_ENTRA_TOKEN: ${{ secrets.AILY_ENTRA_TOKEN }}
           GITHUB_TOKEN: ${{ github.token }}
           OPENHANDS_PHASE: ${{ inputs.phase }}
           OPENHANDS_ENV_FILE: ${{ inputs.llm_env_file }}
@@ -110,6 +116,8 @@ jobs:
             grep -Eq '^(export[[:space:]]+)?LLM_API_KEY=' "$OPENHANDS_ENV_FILE" || { echo "::error::The configured env file has no LLM_API_KEY entry."; exit 1; }
           fi
           if [[ "$OPENHANDS_FLOW_LABEL" == "agent:openhands-backfix" || "$OPENHANDS_FLOW_LABEL" == "agent:openhands-full-development" ]]; then
+            test -n "$AILY_USER_ID" || { echo "::error::Configure the AILY_USER_ID repository secret for Aily review."; exit 1; }
+            test -n "$AILY_ENTRA_TOKEN" || { echo "::error::Configure the AILY_ENTRA_TOKEN repository secret for Aily review."; exit 1; }
             command -v aily >/dev/null || { echo "::error::Aily CLI is required for independent review."; exit 1; }
             aily help claude >/dev/null 2>&1 || { echo "::error::Aily Claude is unavailable to the runner account."; exit 1; }
           fi
@@ -138,6 +146,8 @@ jobs:
           TARGET_REPO_PATH: ${{ github.workspace }}/TargetProject
           OPENHANDS_LLM_API_KEY: ${{ secrets.OPENHANDS_LLM_API_KEY }}
           OPENHANDS_PUBLISH_TOKEN: ${{ secrets.OPENHANDS_PUBLISH_TOKEN }}
+          AILY_USER_ID: ${{ secrets.AILY_USER_ID }}
+          AILY_ENTRA_TOKEN: ${{ secrets.AILY_ENTRA_TOKEN }}
           GITHUB_TOKEN: ${{ github.token }}
           OPENHANDS_LLM_MODEL: ${{ vars.OPENHANDS_LLM_MODEL }}
           OPENHANDS_LLM_BASE_URL: ${{ vars.OPENHANDS_LLM_BASE_URL }}
