@@ -59,6 +59,8 @@ jobs:
       flow_label: ${{ github.event.label.name }}
     secrets:
       OPENHANDS_LLM_API_KEY: ${{ secrets.OPENHANDS_LLM_API_KEY }}
+      AILY_USER_ID: ${{ secrets.AILY_USER_ID }}
+      AILY_ENTRA_TOKEN: ${{ secrets.AILY_ENTRA_TOKEN }}
       OPENHANDS_PUBLISH_TOKEN: ${{ secrets.OPENHANDS_PUBLISH_TOKEN }}
 
   full-development-proposal:
@@ -69,6 +71,8 @@ jobs:
       phase: proposal
     secrets:
       OPENHANDS_LLM_API_KEY: ${{ secrets.OPENHANDS_LLM_API_KEY }}
+      AILY_USER_ID: ${{ secrets.AILY_USER_ID }}
+      AILY_ENTRA_TOKEN: ${{ secrets.AILY_ENTRA_TOKEN }}
 
   full-development-implementation:
     if: github.event_name == 'issue_comment' && startsWith(github.event.comment.body, '/openhands approve')
@@ -78,6 +82,8 @@ jobs:
       phase: implementation
     secrets:
       OPENHANDS_LLM_API_KEY: ${{ secrets.OPENHANDS_LLM_API_KEY }}
+      AILY_USER_ID: ${{ secrets.AILY_USER_ID }}
+      AILY_ENTRA_TOKEN: ${{ secrets.AILY_ENTRA_TOKEN }}
       OPENHANDS_PUBLISH_TOKEN: ${{ secrets.OPENHANDS_PUBLISH_TOKEN }}
 ```
 
@@ -98,9 +104,10 @@ Actions variables `OPENHANDS_LLM_MODEL`, `OPENHANDS_LLM_BASE_URL`, and
 `OPENHANDS_AGENT_SERVER_IMAGE` to override them. Rotate any provider key that
 has previously appeared in a terminal log or chat before saving it as a secret.
 
-Each caller repository needs the four labels and either the `OPENHANDS_LLM_API_KEY`
-secret or a readable runner-local env file. No long-lived publish token is
-required; the workflow token is scoped to the target repo and current run.
+Each caller repository needs the four flow labels and either the `OPENHANDS_LLM_API_KEY`
+secret or a readable runner-local env file. Repositories using Full-development or
+Backfix also need the `AILY_USER_ID` and `AILY_ENTRA_TOKEN` secrets. No long-lived
+publish token is required; the workflow token is scoped to the target repo and current run.
 
 The current AskDoc runner is repository-scoped. GitHub makes self-hosted runners
 available at repository, organization, or enterprise scope; to share one Mac
