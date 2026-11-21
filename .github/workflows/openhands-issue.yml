@@ -118,8 +118,10 @@ jobs:
           if [[ "$OPENHANDS_FLOW_LABEL" == "agent:openhands-backfix" || "$OPENHANDS_FLOW_LABEL" == "agent:openhands-full-development" ]]; then
             test -n "$AILY_USER_ID" || { echo "::error::Configure the AILY_USER_ID repository secret for Aily review."; exit 1; }
             test -n "$AILY_ENTRA_TOKEN" || { echo "::error::Configure the AILY_ENTRA_TOKEN repository secret for Aily review."; exit 1; }
-            command -v aily >/dev/null || { echo "::error::Aily CLI is required for independent review."; exit 1; }
-            aily help claude >/dev/null 2>&1 || { echo "::error::Aily Claude is unavailable to the runner account."; exit 1; }
+            AILY_CLI="${AILY_CLI:-$HOME/.local/bin/aily}"
+            test -x "$AILY_CLI" || { echo "::error::Aily CLI executable was not found at $AILY_CLI."; exit 1; }
+            "$AILY_CLI" claude --help >/dev/null 2>&1 || { echo "::error::The configured Aily CLI does not support the Claude subcommand."; exit 1; }
+            echo "AILY_CLI=$AILY_CLI" >> "$GITHUB_ENV"
           fi
           if [[ "$OPENHANDS_FLOW_LABEL" != "agent:openhands-implementation-only" && "$OPENHANDS_PHASE" != "proposal" ]]; then
             test -n "$OPENHANDS_PUBLISH_TOKEN" || test -n "$GITHUB_TOKEN" || { echo "::error::GitHub publication credentials are unavailable."; exit 1; }
