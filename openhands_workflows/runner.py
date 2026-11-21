@@ -402,6 +402,8 @@ Diff:
         REVIEW_BUDGET_USD,
     ]
     env = os.environ.copy()
+    env.pop("CI", None)
+    env.pop("GITHUB_ACTIONS", None)
     for name in ("GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "OPENHANDS_PUBLISH_TOKEN"):
         env.pop(name, None)
     with tempfile.TemporaryDirectory(prefix="openhands-workflow-review-") as review_dir:
@@ -471,6 +473,8 @@ Proposal:
         REVIEW_BUDGET_USD,
     ]
     env = os.environ.copy()
+    env.pop("CI", None)
+    env.pop("GITHUB_ACTIONS", None)
     for name in ("GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "OPENHANDS_PUBLISH_TOKEN"):
         env.pop(name, None)
     with tempfile.TemporaryDirectory(prefix="openhands-plan-review-") as review_dir:
