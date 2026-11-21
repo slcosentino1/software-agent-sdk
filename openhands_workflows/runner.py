@@ -70,6 +70,18 @@ class WorkflowError(RuntimeError):
     """A fail-closed workflow error safe to show in a GitHub job log."""
 
 
+def _safe_cli_error(result: subprocess.CompletedProcess[str]) -> str:
+    """Return bounded CLI diagnostics with known credentials redacted."""
+    detail = (result.stderr or result.stdout or "").strip()[-4000:]
+    for name in ("AILY_ENTRA_TOKEN", "OPENHANDS_LLM_API_KEY", "OPENHANDS_PUBLISH_TOKEN"):
+        secret = os.environ.get(name)
+        if secret:
+            detail = detail.replace(secret, "[REDACTED]")
+    for pattern in SECRET_PATTERNS:
+        detail = pattern.sub("[REDACTED_CREDENTIAL]", detail)
+    return detail or "Aily returned no diagnostic output."
+
+
 def _run(
     command: list[str],
     *,
@@ -409,7 +421,7 @@ Diff:
     with tempfile.TemporaryDirectory(prefix="openhands-workflow-review-") as review_dir:
         result = _run(command, cwd=Path(review_dir), env=env, timeout=900)
     if result.returncode:
-        raise WorkflowError("Claude review failed; no Pull Request was created.")
+        raise WorkflowError(f"Claude review failed (exit {result.returncode}): {_safe_cli_error(result)}; no Pull Request was created.")
     try:
         envelope = json.loads(result.stdout)
         text = envelope.get("result")
@@ -480,7 +492,7 @@ Proposal:
     with tempfile.TemporaryDirectory(prefix="openhands-plan-review-") as review_dir:
         result = _run(command, cwd=Path(review_dir), env=env, timeout=900)
     if result.returncode:
-        raise WorkflowError("Claude proposal review failed; the workflow remains at proposal review.")
+        raise WorkflowError(f"Claude proposal review failed (exit {result.returncode}): {_safe_cli_error(result)}; the workflow remains at proposal review.")
     try:
         envelope = json.loads(result.stdout)
         review_text = envelope.get("result")
