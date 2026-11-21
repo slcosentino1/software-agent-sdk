@@ -383,6 +383,7 @@ Diff:
     command = [
         aily_cli,
         "claude",
+        "--entra",
         "-p",
         prompt,
         "--output-format",
@@ -451,6 +452,7 @@ Proposal:
     command = [
         aily_cli,
         "claude",
+        "--entra",
         "-p",
         prompt,
         "--output-format",
